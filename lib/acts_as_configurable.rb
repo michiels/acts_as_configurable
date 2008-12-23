@@ -147,20 +147,25 @@ module ActsAsConfigurable
 
     def add_setting_reader(item)
       define_method(item.name) do
-        column = send(acts_as_configurable_options[:using]) || send("#{acts_as_configurable_options[:using]}=", Hash.new)
-        column.has_key?(item.name) ? column[item.name] : item.default
+        settings = send("#{acts_as_configurable_options[:using]}")
+        setting = settings.find :first, :conditions => {:setting_key => item.name }
+        !setting.nil? ? item.typecast(setting.setting_value) : item.default
       end
       define_method("#{item.name}?") { !send(item.name).blank? }
     end
 
     def add_setting_writer(item)
       define_method("#{item.name}=") do |value|
+        settings = send("#{acts_as_configurable_options[:using]}")
+        
         # Notify ActiveRecord that settings attribute will be dirtied.
-        will_change = "#{acts_as_configurable_options[:using]}_will_change!"
-        send(will_change) if respond_to?(will_change)
-
-        column = send(acts_as_configurable_options[:using]) || send("#{acts_as_configurable_options[:using]}=", Hash.new)
-        column[item.name] = item.typecast(value)
+        setting = settings.find :first, :conditions => {:setting_key => item.name }
+        
+        if setting.nil?
+          setting = settings.create(:setting_key => item.name)
+        end
+        setting.setting_value = item.typecast(value)
+        setting.save
       end
     end
   end
@@ -206,6 +211,7 @@ module ActsAsConfigurable
     # The above will force ActsAsConfigurable to store settings in the
     # "preferences" column instead of the default "settings" column.
     def acts_as_configurable(options = {}, &block)
+      self.has_many options[:using]
       options.symbolize_keys!.reverse_merge!(:using => :settings)
       write_inheritable_hash(:acts_as_configurable_options, options)
       class_inheritable_reader(:acts_as_configurable_options)
